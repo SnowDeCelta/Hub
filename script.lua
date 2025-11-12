@@ -33,7 +33,7 @@ local state = {
     world = nil, mob = nil, returnWorld = nil, savedPos = nil,
     diffByName = {}, toggles = {}, exitWave = nil, inTrialWait = false,
     exitTowerWave = nil, triedEnterTower = false, gachaType = nil,
-    meteorCount = 0, lastMeteorTime = 0, meteorRainActive = false,
+    lastMeteorTime = 0, meteorRainActive = false,
     inTowerWait = false
 }
 local C = {
@@ -45,9 +45,21 @@ local C = {
     TELEPORT_OFFSET = CFrame.new(0, 5, -8),
     FARM_DISTANCE_THRESHOLD = 80,
     METEOR_TELEPORT_OFFSET = CFrame.new(0, 5, -3),
-    CHEST_TELEPORT_OFFSET = CFrame.new(0, 5, -3)
+    CHEST_TELEPORT_OFFSET = CFrame.new(0, 5, -3),
+    METEOR_RAIN_TIMEOUT = 30
 }
 local CHEST_NAMES = {"Daily", "Group", "Time", "VIP"}
+local ACHIEVEMENT_NAMES = {
+    "Damage I", "Damage II", "Damage III", "Damage IV", "Damage V",
+    "Damage VI", "Damage VII", "Damage VIII", "Damage IX", "Damage X",
+    "Inventory I", "Inventory II", "Inventory III", "Inventory IV",
+    "Luck I", "Luck II", "Luck III", "Luck IV", "Luck V",
+    "Luck VI", "Luck VII", "Luck VIII", "Luck IX", "Luck X",
+    "Tower I", "Tower II", "Tower III", "Tower IV", "Tower V",
+    "Tower VI", "Tower VII", "Tower VIII", "Tower IX", "Tower X",
+    "Trial I", "Trial II", "Trial III", "Trial IV", "Trial V",
+    "Trial VI", "Trial VII", "Trial VIII", "Trial IX", "Trial X"
+}
 local function getHRP() return (player.Character or player.CharacterAdded:Wait()):FindFirstChild("HumanoidRootPart") end
 local function getPart(model)
     if model:IsA("BasePart") then return model end
@@ -186,12 +198,13 @@ local function monitorGamemode(gamemode, para, getWaveFunc, getMobFunc, toggleKe
     end)
 end
 -- Farm Tab
-local WorldDD = Tabs.Farm:CreateDropdown("WorldDD", {Title = "Select World", Values = C.WORLDS, Multi = false, Default = nil})
-local MobDropdown = Tabs.Farm:CreateDropdown("MobDropdown", {Title = "Select Mob", Values = {"No Mobs"}, Multi = false, Default = nil})
+local WorldDD = Tabs.Farm:CreateDropdown("WorldDD", {Title = "Select World", Description = "Pick a map to grind", Values = C.WORLDS, Multi = false, Default = nil})
+local MobDropdown = Tabs.Farm:CreateDropdown("MobDropdown", {Title = "Select Mob", Description = "Choose your target", Values = {"No Mobs"}, Multi = false, Default = nil})
 WorldDD:OnChanged(function(Value) if Value and Value ~= "" then state.world = Value updateMobDD(Value, MobDropdown) end end)
 MobDropdown:OnChanged(function(Value) if Value and Value ~= "" and Value ~= "No Mobs" then state.mob = Value else state.mob = nil end end)
 local AutoFarmToggle = Tabs.Farm:CreateToggle("AutoFarmToggle", {
     Title = "Auto Farm",
+    Description = "Teleport and defeat mobs",
     Default = false,
     Callback = function(Value)
         state.toggles.AutoFarm = Value
@@ -209,6 +222,7 @@ local AutoFarmToggle = Tabs.Farm:CreateToggle("AutoFarmToggle", {
 -- Stars Tab
 local AutoHatchNToggle = Tabs.Stars:CreateToggle("AutoHatchNToggle", {
     Title = "Auto Hatch Normal",
+    Description = "Open stars calmly",
     Default = false,
     Callback = function(Value)
         state.toggles.AutoHatchN = Value
@@ -217,6 +231,7 @@ local AutoHatchNToggle = Tabs.Stars:CreateToggle("AutoHatchNToggle", {
 })
 local AutoHatchFToggle = Tabs.Stars:CreateToggle("AutoHatchFToggle", {
     Title = "Auto Hatch Fast",
+    Description = "Crack stars at speed",
     Default = false,
     Callback = function(Value)
         state.toggles.AutoHatchF = Value
@@ -226,6 +241,7 @@ local AutoHatchFToggle = Tabs.Stars:CreateToggle("AutoHatchFToggle", {
 -- Trial Tab
 local AutoTrialToggle = Tabs.Trial:CreateToggle("AutoTrialToggle", {
     Title = "Enter Trial",
+    Description = "Hop into scheduled runs",
     Default = false,
     Callback = function(Value)
         if Value and (not state.returnWorld or not state.savedPos or not state.exitWave or state.exitWave <= 0) then
@@ -255,6 +271,7 @@ local AutoTrialToggle = Tabs.Trial:CreateToggle("AutoTrialToggle", {
 })
 local AutoFarmTrialToggle = Tabs.Trial:CreateToggle("AutoFarmTrialToggle", {
     Title = "Auto Farm Trial",
+    Description = "Stay active in waves",
     Default = false,
     Callback = function(Value)
         if Value and (not state.returnWorld or not state.savedPos or not state.exitWave or state.exitWave <= 0) then
@@ -265,13 +282,14 @@ local AutoFarmTrialToggle = Tabs.Trial:CreateToggle("AutoFarmTrialToggle", {
         if Value then farmLoop("AutoFarmTrial", function() return getGamemodeMob("Trial") end) end
     end
 })
-local ExitWaveInput = Tabs.Trial:CreateInput("ExitWaveInput", {Title = "Exit at Wave", Default = "", Numeric = true, Finished = true, Callback = function(Value) state.exitWave = tonumber(Value) end})
+local ExitWaveInput = Tabs.Trial:CreateInput("ExitWaveInput", {Title = "Exit at Wave", Description = "Choose your cutoff", Default = "", Numeric = true, Finished = true, Callback = function(Value) state.exitWave = tonumber(Value) end})
 local TrialStatusPara = Tabs.Trial:CreateParagraph("TrialStatusPara", {Title = "Trial Status", Content = "Current wave and status. Calculating..."})
 _G.exitedTrial = false
 monitorGamemode("Trial", Options.TrialStatusPara, function() return getWave("Trial") end, function() return getGamemodeMob("Trial") end, "AutoTrial", "exitWave", "exitedTrial", true)
 -- Tower Tab
 local AutoTowerToggle = Tabs.Tower:CreateToggle("AutoTowerToggle", {
     Title = "Enter Tower",
+    Description = "Queue up for layers",
     Default = false,
     Callback = function(Value)
         if Value and (not state.returnWorld or not state.savedPos or not state.exitTowerWave or state.exitTowerWave <= 0) then
@@ -304,6 +322,7 @@ local AutoTowerToggle = Tabs.Tower:CreateToggle("AutoTowerToggle", {
 })
 local AutoFarmTowerToggle = Tabs.Tower:CreateToggle("AutoFarmTowerToggle", {
     Title = "Auto Farm Tower",
+    Description = "Keep pressure in floors",
     Default = false,
     Callback = function(Value)
         if Value and (not state.returnWorld or not state.savedPos or not state.exitTowerWave or state.exitTowerWave <= 0) then
@@ -314,15 +333,16 @@ local AutoFarmTowerToggle = Tabs.Tower:CreateToggle("AutoFarmTowerToggle", {
         if Value then farmLoop("AutoFarmTower", function() return getGamemodeMob("Tower") end) end
     end
 })
-local ExitTowerWaveInput = Tabs.Tower:CreateInput("ExitTowerWaveInput", {Title = "Exit at Wave", Default = "", Numeric = true, Finished = true, Callback = function(Value) state.exitTowerWave = tonumber(Value) end})
-local TowerPara = Tabs.Tower:CreateParagraph("TowerPara", {Title = "Status", Content = "Current wave and status inside Tower. Calculating..."})
+local ExitTowerWaveInput = Tabs.Tower:CreateInput("ExitTowerWaveInput", {Title = "Exit at Wave", Description = "Pick your last floor", Default = "", Numeric = true, Finished = true, Callback = function(Value) state.exitTowerWave = tonumber(Value) end})
+local TowerPara = Tabs.Tower:CreateParagraph("TowerPara", {Title = "Tower Status", Content = "Current wave and status inside Tower. Calculating..."})
 _G.exitedTower = false
 monitorGamemode("Tower", Options.TowerPara, function() return getWave("Tower") end, function() return getGamemodeMob("Tower") end, "AutoTower", "exitTowerWave", "exitedTower", true)
 -- Gacha Tab
-local GachaDD = Tabs.Gacha:CreateDropdown("GachaDD", {Title = "Select Gacha", Values = {"Clans", "Races", "Breathings", "Haki"}, Multi = false, Default = nil})
+local GachaDD = Tabs.Gacha:CreateDropdown("GachaDD", {Title = "Select Gacha", Description = "Pick a reroll pool", Values = {"Clans", "Races", "Breathings", "Haki"}, Multi = false, Default = nil})
 GachaDD:OnChanged(function(Value) if Value and Value ~= "" then state.gachaType = Value end end)
 local AutoRerollToggle = Tabs.Gacha:CreateToggle("AutoRerollToggle", {
     Title = "Auto Reroll",
+    Description = "Spin until satisfied",
     Default = false,
     Callback = function(Value)
         state.toggles.AutoReroll = Value
@@ -338,6 +358,7 @@ local AutoRerollToggle = Tabs.Gacha:CreateToggle("AutoRerollToggle", {
 -- Events Tab
 local AutoBossToggle = Tabs.Events:CreateToggle("AutoBossToggle", {
     Title = "Auto Farm Boss",
+    Description = "Chase elite enemies",
     Default = false,
     Callback = function(Value)
         if Value and (not state.returnWorld or not state.savedPos) then
@@ -348,7 +369,7 @@ local AutoBossToggle = Tabs.Events:CreateToggle("AutoBossToggle", {
         if Value then
             task.spawn(function()
                 while state.toggles.AutoBoss do
-                    if getMeteor() or state.meteorRainActive or state.toggles.AutoTower or state.inTowerWait or getGamemodeMob("Trial") or getGamemodeMob("Tower") or state.inTrialWait then
+                    if getMeteor() or getGamemodeMob("Trial") then
                         task.wait(0.05)
                     else
                         local hrp = getHRP()
@@ -364,7 +385,7 @@ local AutoBossToggle = Tabs.Events:CreateToggle("AutoBossToggle", {
                                 local firstBossPart = getPart(bosses[1])
                                 if firstBossPart then tpTo(firstBossPart) task.wait(0.05) end
                                 while state.toggles.AutoBoss and #getBosses() > 0 do
-                                    if getMeteor() or state.meteorRainActive or state.toggles.AutoTower or state.inTowerWait or getGamemodeMob("Trial") or getGamemodeMob("Tower") or state.inTrialWait then break end
+                                    if getMeteor() or getGamemodeMob("Trial") then break end
                                     local targetBoss = getBosses()[1]
                                     if targetBoss and targetBoss.Parent and (targetBoss:GetAttribute("Health") or 1) > 0 then maintainDist(getPart(targetBoss)) end
                                     task.wait(0.05)
@@ -382,6 +403,7 @@ local AutoBossToggle = Tabs.Events:CreateToggle("AutoBossToggle", {
 local BossPara = Tabs.Events:CreateParagraph("BossPara", {Title = "Boss Status", Content = "Monitors spawned bosses. Checking..."})
 local AutoMeteorToggle = Tabs.Events:CreateToggle("AutoMeteorToggle", {
     Title = "Auto Meteor",
+    Description = "Dash to falling stones",
     Default = false,
     Callback = function(Value)
         if Value and (not state.returnWorld or not state.savedPos) then
@@ -392,55 +414,48 @@ local AutoMeteorToggle = Tabs.Events:CreateToggle("AutoMeteorToggle", {
         if Value then
             task.spawn(function()
                 while state.toggles.AutoMeteor do
-                    local meteor = getMeteor()
-                    if meteor then
-                        local currentTime = tick()
-                        if currentTime - state.lastMeteorTime > 10 then
-                            state.meteorCount = 1
-                        else
-                            state.meteorCount = state.meteorCount + 1
-                        end
-                        state.lastMeteorTime = currentTime
-                       
-                        if state.meteorCount >= 2 then
+                    if getGamemodeMob("Trial") then
+                        task.wait(0.5)
+                    else
+                        local meteor = getMeteor()
+                        if meteor then
                             state.meteorRainActive = true
-                        end
-                       
-                        local meteorPart = getPart(meteor)
-                        local targetWorld = nil
-                        local success, spawnsFolder = pcall(function() return Services.Workspace.Server.GameEvent.Meteors:WaitForChild("Spawns") end)
-                        if success and spawnsFolder then
-                            for _, spot in ipairs(spawnsFolder:GetChildren()) do
-                                if spot:IsA("BasePart") and meteorPart and meteorPart.CFrame == spot.CFrame then
-                                    targetWorld = spot.Name
-                                    break
+                            state.lastMeteorTime = tick()
+                            local meteorPart = getPart(meteor)
+                            local targetWorld = nil
+                            local success, spawnsFolder = pcall(function() return Services.Workspace.Server.GameEvent.Meteors:WaitForChild("Spawns") end)
+                            if success and spawnsFolder then
+                                for _, spot in ipairs(spawnsFolder:GetChildren()) do
+                                    if spot:IsA("BasePart") and meteorPart and meteorPart.CFrame == spot.CFrame then
+                                        targetWorld = spot.Name
+                                        break
+                                    end
                                 end
                             end
-                        end
-                        if targetWorld then
-                            Bridge:FireServer("General", "Teleport", "Teleport", targetWorld)
-                            task.wait(1.5)
-                        end
-                        if meteorPart then
-                            tpTo(meteorPart, C.METEOR_TELEPORT_OFFSET)
-                            task.wait(0.5)
-                        end
-                        local mesh = meteor:FindFirstChild("Mesh")
-                        local prompt = mesh and mesh:FindFirstChild("Prompt")
-                        if prompt and prompt:IsA("ProximityPrompt") then
-                            local attempts = 0
-                            while meteor and prompt and prompt.Parent and attempts < 10 do
-                                fireproximityprompt(prompt)
-                                attempts = attempts + 1
-                                task.wait(0.1)
+                            if targetWorld then
+                                Bridge:FireServer("General", "Teleport", "Teleport", targetWorld)
+                                task.wait(0.6)
                             end
-                        end
-                        while getMeteor() do task.wait(0.05) end
-                        returnSaved()
-                    else
-                        if state.meteorRainActive and tick() - state.lastMeteorTime > 60 then
-                            state.meteorRainActive = false
-                            state.meteorCount = 0
+                            if meteorPart then
+                                tpTo(meteorPart, C.METEOR_TELEPORT_OFFSET)
+                                task.wait(0.2)
+                            end
+                            local mesh = meteor:FindFirstChild("Mesh")
+                            local prompt = mesh and mesh:FindFirstChild("Prompt")
+                            if prompt and prompt:IsA("ProximityPrompt") then
+                                local attempts = 0
+                                while meteor and prompt and prompt.Parent and attempts < 10 do
+                                    fireproximityprompt(prompt)
+                                    attempts = attempts + 1
+                                    task.wait(0.1)
+                                end
+                            end
+                            while getMeteor() do task.wait(0.05) end
+                            returnSaved()
+                        else
+                            if state.meteorRainActive and tick() - state.lastMeteorTime > C.METEOR_RAIN_TIMEOUT then
+                                state.meteorRainActive = false
+                            end
                         end
                     end
                     task.wait(0.5)
@@ -451,10 +466,11 @@ local AutoMeteorToggle = Tabs.Events:CreateToggle("AutoMeteorToggle", {
 })
 local MeteorPara = Tabs.Events:CreateParagraph("MeteorPara", {Title = "Meteor Status", Content = "Monitors spawned meteors. Checking..."})
 -- Misc Tab
-local ReturnWorldDD = Tabs.Misc:CreateDropdown("ReturnWorldDD", {Title = "Return World", Values = C.WORLDS, Multi = false, Default = nil})
+local ReturnWorldDD = Tabs.Misc:CreateDropdown("ReturnWorldDD", {Title = "Return World", Description = "Home base after runs", Values = C.WORLDS, Multi = false, Default = nil})
 ReturnWorldDD:OnChanged(function(Value) if Value and Value ~= "" then state.returnWorld = Value end end)
 local SavePosButton = Tabs.Misc:CreateButton{
     Title = "Save Position",
+    Description = "Mark a comeback spot",
     Callback = function()
         if not state.returnWorld then
             Library:Notify{Title = "Missing Return World", Content = "Please select a 'Return World' first to save position!", Duration = 4}
@@ -467,9 +483,10 @@ local SavePosButton = Tabs.Misc:CreateButton{
         end
     end
 }
-local ChestDropdown = Tabs.Misc:CreateDropdown("ChestDropdown", {Title = "Select Chests", Values = CHEST_NAMES, Multi = true, Default = {}})
+local ChestDropdown = Tabs.Misc:CreateDropdown("ChestDropdown", {Title = "Select Chests", Description = "Toggle chest targets", Values = CHEST_NAMES, Multi = true, Default = {}})
 local AutoClaimChestsToggle = Tabs.Misc:CreateToggle("AutoClaimChestsToggle", {
     Title = "Auto Claim Chests",
+    Description = "Scoops rewards on cooldown",
     Default = false,
     Callback = function(Value)
         if Value and (not state.returnWorld or not state.savedPos) then
@@ -481,16 +498,13 @@ local AutoClaimChestsToggle = Tabs.Misc:CreateToggle("AutoClaimChestsToggle", {
             Options.AutoClaimChestsToggle:SetValue(false)
             return
         end
-       
         local valueDict = Options.ChestDropdown.Value or {}
-       
         local selected = {}
         for key, enabled in pairs(valueDict) do
             if enabled then
                 table.insert(selected, key)
             end
         end
-       
         if Value and #selected == 0 then
             Library:Notify{
                 Title = "Missing Selection",
@@ -500,89 +514,53 @@ local AutoClaimChestsToggle = Tabs.Misc:CreateToggle("AutoClaimChestsToggle", {
             Options.AutoClaimChestsToggle:SetValue(false)
             return
         end
-       
         state.toggles.AutoClaimChests = Value
-       
         if Value then
             task.spawn(function()
                 while state.toggles.AutoClaimChests do
-                    local valueDict = Options.ChestDropdown.Value or {}
-                    local selected = {}
+                    valueDict = Options.ChestDropdown.Value or {}
+                    selected = {}
                     for key, enabled in pairs(valueDict) do
                         if enabled then
                             table.insert(selected, key)
                         end
                     end
-                   
                     if #selected == 0 then
                         task.wait(5)
                         continue
                     end
-                   
-                    local hasHigherPriority = false
-                   
-                    if state.toggles.AutoFarm then
-                        hasHigherPriority = true
-                    elseif state.meteorRainActive then
-                        hasHigherPriority = true
-                    elseif state.toggles.AutoTower or state.toggles.AutoFarmTower or state.inTowerWait or getGamemodeMob("Tower") then
-                        hasHigherPriority = true
-                    elseif state.toggles.AutoTrial or state.toggles.AutoFarmTrial or state.inTrialWait or getGamemodeMob("Trial") then
-                        hasHigherPriority = true
-                    elseif state.toggles.AutoBoss or #getBosses() > 0 then
-                        hasHigherPriority = true
-                    end
-                   
-                    if hasHigherPriority then
+                    if getGamemodeMob("Trial") then
                         task.wait(2)
                         continue
                     end
-                   
                     local chestsFolder = Services.Workspace.Server:FindFirstChild("Chests")
-                   
                     if not chestsFolder then
                         task.wait(5)
                         continue
                     end
-                   
                     local collectedAny = false
-                   
                     for _, chestName in ipairs(selected) do
                         if not state.toggles.AutoClaimChests then break end
-                       
                         local chest = chestsFolder:FindFirstChild(chestName)
-                        if not chest then
-                            continue
-                        end
-                       
+                        if not chest then continue end
                         local main = chest:FindFirstChild("main")
-                        if not main then
-                            continue
-                        end
-                       
+                        if not main then continue end
                         local statusGui = main:FindFirstChild("BillboardGui")
                         local isReady = false
-                       
                         if statusGui then
                             local statusFrame = statusGui:FindFirstChild("Frame")
                             if statusFrame then
                                 local status = statusFrame:FindFirstChild("Status")
                                 if status and status:IsA("TextLabel") then
-                                    local statusText = status.Text
-                                    isReady = (statusText == "READY")
+                                    isReady = (status.Text == "READY")
                                 end
                             end
                         end
-                       
-                        if not isReady then
-                            continue
-                        end
-                       
+                        if not isReady then continue end
                         local mainPart = getPart(main)
                         if mainPart then
                             tpTo(mainPart, C.CHEST_TELEPORT_OFFSET)
                             task.wait(0.5)
-                           
                             local prompt = main:FindFirstChild("Prompt")
                             if prompt and prompt:IsA("ProximityPrompt") then
                                 fireproximityprompt(prompt)
@@ -591,12 +569,56 @@ local AutoClaimChestsToggle = Tabs.Misc:CreateToggle("AutoClaimChestsToggle", {
                             end
                         end
                     end
-                   
                     if collectedAny then
                         returnSaved()
                         task.wait(1)
                     end
-                   
+                    task.wait(30)
+                end
+            end)
+        end
+    end
+})
+local AutoClaimAchievementsToggle = Tabs.Misc:CreateToggle("AutoClaimAchievementsToggle", {
+    Title = "Auto Claim Achievements",
+    Description = "Collect badges automatically",
+    Default = false,
+    Callback = function(Value)
+        state.toggles.AutoClaimAchievements = Value
+        if Value then
+            task.spawn(function()
+                while state.toggles.AutoClaimAchievements do
+                    local achievementsUI = player.PlayerGui:WaitForChild("UI"):WaitForChild("Frames"):WaitForChild("Achievements"):WaitForChild("Frame"):WaitForChild("List")
+                    local readyAchievements = {}
+                    for _, achName in ipairs(ACHIEVEMENT_NAMES) do
+                        if not state.toggles.AutoClaimAchievements then break end
+                        local achFrame = achievementsUI:FindFirstChild(achName)
+                        if not achFrame then continue end
+                        local innerFrame = achFrame:FindFirstChild("Frame")
+                        if not innerFrame then continue end
+                        local claimedFrame = innerFrame:FindFirstChild("Claimed")
+                        if not claimedFrame or claimedFrame.Visible then continue end
+                        local amountLabel = innerFrame:FindFirstChild("Amount")
+                        if not amountLabel or not amountLabel:IsA("TextLabel") then continue end
+                        local amountText = amountLabel.Text
+                        local current, required = amountText:match("(%d+)/(%d+)")
+                        if not current or not required then continue end
+                        current = tonumber(current)
+                        required = tonumber(required)
+                        if current and required and current >= required then
+                            table.insert(readyAchievements, achName)
+                        end
+                    end
+                    local claimedAchievements = {}
+                    for _, achName in ipairs(readyAchievements) do
+                        if not state.toggles.AutoClaimAchievements then break end
+                        Bridge:FireServer("General", "Achievements", "Claim", achName)
+                        table.insert(claimedAchievements, achName)
+                        task.wait(0.8)
+                    end
+                    if #claimedAchievements > 0 then
+                        Library:Notify{Title = "Achievements", Content = "Claimed achievements: " .. table.concat(claimedAchievements, ", "), Duration = 3}
+                    end
                     task.wait(30)
                 end
             end)
@@ -609,28 +631,22 @@ task.spawn(function()
         local bosses = getBosses()
         local bossNames = {}
         for _, boss in ipairs(bosses) do table.insert(bossNames, boss.Name) end
-       
         local atBoss = false
         local hrp = getHRP()
         if hrp and #bosses > 0 then
             for _, boss in ipairs(bosses) do
                 local bossPart = getPart(boss)
-                if bossPart then
-                    local distance = (hrp.Position - bossPart.Position).Magnitude
-                    if distance <= 100 then
-                        atBoss = true
-                        break
-                    end
+                if bossPart and (hrp.Position - bossPart.Position).Magnitude <= 100 then
+                    atBoss = true
+                    break
                 end
             end
         end
-       
         Options.BossPara:SetValue(string.format("Bosses Spawned: %s\nList: %s\nAt Boss: %s",
             #bosses > 0 and "Yes" or "No",
             #bossNames > 0 and table.concat(bossNames, ", ") or "None",
             atBoss and "Yes" or "No"
         ))
-       
         local meteor = getMeteor()
         Options.MeteorPara:SetValue(string.format("Meteor Spawned: %s", meteor and "Yes" or "No"))
         task.wait(0.3)
